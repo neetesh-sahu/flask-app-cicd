@@ -72,7 +72,7 @@ jobs:
     name: Deploy on Local Server
     needs: build
 
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
