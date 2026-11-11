@@ -1,0 +1,97 @@
+
+name: Flask CI-CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # CI - TEST
+  test:
+    name: Run Python Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Pytest
+        run: |
+          python -m pytest -v
+
+
+  # BUILD AND PUSH
+  build:
+    name: Build and Push Docker Image
+    needs: test
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker Hub Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/flask-docker-cicd:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/flask-docker-cicd:${{ github.sha }}
+
+
+  # CD - DEPLOY
+  deploy:
+    name: Deploy on Local Server
+    needs: build
+
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Pull Latest Image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker pull ${DOCKERHUB_USERNAME}/flask-docker-cicd:latest
+
+      - name: Deploy Application
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker compose up -d --pull always --remove-orphans
+
+      - name: Verify Deployment
+        run: |
+          sleep 5
+          curl --fail http://localhost:5000/health
+          docker ps
